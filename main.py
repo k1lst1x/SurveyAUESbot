@@ -67,25 +67,28 @@ async def send_welcome(message: types.Message):
   await message.reply(
       "Привет! 👋\nЯ Анонимный Бот от Алматинского университета энергетики и связи имени Гумарбека Даукеева!\nВы можете оставить анонимное сообщение, просто введите команду /anon.")
 
-
 @dp.message_handler(commands=['anon'])
 async def send_anonymous_instruction(message: types.Message):
-  await message.answer(
-      "Вы можете оставить анонимное сообщение. Пожалуйста, введите ваше сообщение. 📝")
+    await message.answer(
+        "Вы можете оставить анонимное сообщение. Просто отправьте текст вашего сообщения, либо прикрепите медиа-файл.\nПожалуйста, обратите внимание, что максимальный размер одного прикрепленного файла или общий размер всех прикрепленных файлов не должен превышать 15 МБ. 📝📎")
+
+MAX_FILE_SIZE = 15728640  # 15 MB
 
 async def save_media(bot, media_group):
   media_paths = []  # Создаем пустой список для хранения путей к сохраненным медиа-файлам
+  total_memory = 0
   for media in media_group.media:
       file_id = media.media
       file_type = media.type
   
       # Получаем информацию о файле
       file_info = await bot.get_file(file_id)
+      total_memory += file_info.file_size
       file_path = file_info.file_path
   
       # Загружаем файл
       downloaded_file = await bot.download_file(file_path)
-  
+
       # Определяем расширение файла в зависимости от типа медиа
       if file_type == "photo":
           file_extension = ".jpg"
@@ -99,11 +102,13 @@ async def save_media(bot, media_group):
       save_path = os.path.join("media", f"{file_id}{file_extension}")
       with open(save_path, "wb") as new_file:
           new_file.write(downloaded_file.getvalue())
-  
+      
       # Добавляем путь к сохраненному файлу в список
       media_paths.append(save_path)
-  
-  return media_paths  # Возвращаем список путей к сохраненным медиа-файлам
+  if total_memory > MAX_FILE_SIZE:
+    return 0
+  else:
+    return media_paths  # Возвращаем список путей к сохраненным медиа-файлам
 
 async def save_single_media(bot, message):
   if message.photo:
@@ -114,7 +119,8 @@ async def save_single_media(bot, message):
       file_extension = ".mp4"
   else:
       return  # Нет медиа для сохранения
-  
+  if file_info.file_size > MAX_FILE_SIZE:
+    return 0
   file_path = file_info.file_path
   downloaded_file = await bot.download_file(file_path)
   save_path = os.path.join("media", f"{file_info.file_unique_id}{file_extension}")
@@ -142,12 +148,15 @@ async def handle_albums(message: types.Message, album: List[types.Message]):
         body = message.caption if message.caption else "Пользователь отправил медиа-файлы 📷"
 
         media_paths = await save_media(bot, media_group)
-        await message.answer("Подождите немного ⏳")
+        if media_paths == 0:
+          await message.answer("Извините, общий размер прикрепленных файлов превышает 15 МБ 🚫")
+        else:
+          await message.answer("Подождите немного ⏳")
 
-        # Отправляем сообщение
-        await send_email(subject, body, media_paths)
-
-        await message.answer("Ваше анонимное сообщение успешно отправлено 📬")
+          # Отправляем сообщение
+          await send_email(subject, body, media_paths)
+  
+          await message.answer("Ваше анонимное сообщение успешно отправлено 📬")
 
     except Exception as e:
         print(f'Не удалось обработать сообщение: {e}')
@@ -159,12 +168,16 @@ async def process_message(message: types.Message):
         body = message.text if message.text else (message.caption if message.caption else "Пользователь отправил медиа-файлы 📷")
 
         media_path = await save_single_media(bot, message)
-        await message.answer("Подождите немного ⏳")
 
-        # Отправляем сообщение
-        await send_email(subject, body, [media_path])
+        if media_path == 0:
+          await message.answer("Извините, размер файла превышает 15 МБ 🚫")
+        else:
+          await message.answer("Подождите немного ⏳")
 
-        await message.answer("Ваше анонимное сообщение успешно отправлено 📬")
+          # Отправляем сообщение
+          await send_email(subject, body, [media_path])
+  
+          await message.answer("Ваше анонимное сообщение успешно отправлено 📬")
 
     except Exception as e:
         print(f'Не удалось обработать сообщение: {e}')
